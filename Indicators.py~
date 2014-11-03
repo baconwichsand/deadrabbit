@@ -1,0 +1,38 @@
+import numpy as np
+
+### McClellan Oscillator Calculation
+### http://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:mcclellan_oscillator
+
+### RANA
+rana = np.array([float((d[1]-d[2])/(d[1]+d[2]))*1000 for d in data])
+data = np.column_stack((data, rana))
+
+ema19 = np.repeat(-1, 19)
+ema19 = np.append(ema19, np.mean(rana[:19]))
+for i, r in enumerate(rana):
+    if i > 19:
+        tmp = (r - ema19[-1]) * .10 + ema19[-1]
+        ema19 = np.append(ema19, tmp)
+data = np.column_stack((data, ema19))
+
+ema39 = np.repeat(-1, 39)
+ema39 = np.append(ema39, np.mean(data[:,4][:39]))
+for i, r in enumerate(data[:,4]):
+    if i > 39:
+        tmp = (r - ema39[-1]) * .05 + ema39[-1]
+        ema39 = np.append(ema39, tmp)
+data = np.column_stack((data, ema39))
+
+mosc = np.array([d[5]-d[6] for d in data])
+data = np.column_stack((data, mosc))
+
+summind = np.repeat(-1, 39)
+summind = np.append(summind, data[:,7][39])
+for i, r in enumerate(rana):
+    if i > 39:
+        tmp = data[:,7][i] + summind[-1]
+        summind = np.append(summind, tmp)
+data = np.column_stack((data, summind))
+
+
+print data[100]

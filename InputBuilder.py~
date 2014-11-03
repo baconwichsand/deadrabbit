@@ -1,0 +1,20 @@
+from dset import *
+import csv
+import RandGen
+
+
+class InputBuilder:
+
+    def load_from_csv(self, filename):
+        output = []
+        f = open(filename, 'rt')
+        reader = csv.reader(f)
+        for row in reader:
+            output.append(float(row[1]))
+        f.close()
+        return DSet(output)
+
+    def generate_from_random(self, numpoints, gentype, params):
+        output = []
+        if gentype == 'volatility':
+            output = Randvol

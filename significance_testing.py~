@@ -1,9 +1,0 @@
-import numpy as np
-from analyze import significance
-from RandGen import rand_range
-
-TRIALS = 100
-MIN_INT = -100
-MAX_INT = 100
-
-rdata = rand_range(100, -100, 100)

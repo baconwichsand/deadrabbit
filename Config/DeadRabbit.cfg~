@@ -1,0 +1,16 @@
+[DB Locations]
+test = test.hdf5
+exchange_data = Data/ExchangeData.hdf5
+exchange_data_backup = Data/ExchangeData_b.hdf5
+
+[Feature Identification]
+subset_length = 100
+subset_start = 0
+zigzag = 0.08
+fractal = 0.01
+
+[Matching]
+base = 3
+exponent = 2
+gbl_lower_limit = 0.5
+gbl_upper_limit = 0.5

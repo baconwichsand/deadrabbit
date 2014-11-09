@@ -1,0 +1,4 @@
+[NYSE]
+advancers = http://unicorn.us.com/advdec/NYSE_advn.txt
+decliners = http://unicorn.us.com/advdec/NYSE_decln.txt
+unchanged = http://unicorn.us.com/advdec/NYSE_unchn.txt

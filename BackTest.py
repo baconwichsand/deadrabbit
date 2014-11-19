@@ -28,8 +28,6 @@ def backTest(strategy, symbol, start_date, end_date):
     ######## GENERATE TRADES
     trades, end_account = generateTrades(strategy, symbol, data, signals, initial_account)
 
-    pdb.set_trace()
-
     ####### GENERATE BACKTEST RESULT
     backtest_labels = ['Symbol', 'Strategy', 'Start Date', 'End Date', 'Account Start', 'Account End', 'Total Return ($)', 'Total Return (%)', 'Total Trades', 'Long Trades', 'Short Trades', 'Stopped-out', 'Execution Win (%)', 'Profit/Trade (%)', 'Loss/Trade (%)', 'Trade Risk/Reward', 'Time/Trade (days)', 'Backtest Speed']
 

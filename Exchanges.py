@@ -15,7 +15,10 @@ def load_exchange_data(symbol):
     """
     filename = Config(CFG).get("DB Locations", 'exchange_data')
     operator = HDFStore(filename)
-    return operator[symbol]
+    data = operator[symbol]
+    operator.close()
+ 
+    return data
 
 
 def update_exchanges():

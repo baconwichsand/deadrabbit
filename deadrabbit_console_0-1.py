@@ -1,5 +1,17 @@
+import pdb
 import sys
+import numpy as np
+import csv
+import urllib2
+import h5py
 import cmd
+import time
+import datetime
+import pylab as plt
+import Exchanges
+from matplotlib import rc
+from matplotlib.widgets import Slider, Button, RadioButtons
+from Indicator import RANA, SMA
 from InputBuilder import TargetData, TrainingData, Results
 from io_operations import Config
 from Visualization import feature_selection, matching_review
@@ -10,29 +22,333 @@ import matching
 from analysis import TrainingAnalysis
 from progressbar import Bar, SimpleProgress, ReverseBar, ProgressBar
 
+
 # ##### SMOOTH HDF5 EXECUTION #####
 sys.dont_write_bytecode = True
 
 # #### LOAD CONFIG FILE TO START SESSION
 
-DEFAULT_CFG = 'deadrabbit.cfg'
+CFG = 'Config/DeadRabbit.cfg'
+DB = Config(CFG).get("DB Locations", 'test')
 
-CFG = raw_input('Load config (leave empty for default: ' + DEFAULT_CFG + '): ')
-if CFG == '':
-    CFG = DEFAULT_CFG
-if not os.path.isfile(CFG):
-    LOADED = False
-    while not LOADED:
-        print '\'' + CFG + '\'' + ' not found'
-        CFG = raw_input('Load config (.cfg file): ')
-        if os.path.isfile(CFG):
-            LOADED = True
-print '====> config loaded from', CFG
-
-DB = Config(CFG).get("General", 'hdf5')
-
+class NS:
+    pass
 
 class DRconsole(cmd.Cmd):
+
+    ####################################################
+    # UPDATE EXCHANGES
+    ####################################################
+    def do_update_exchanges(self, line):
+
+        Exchanges.update_exchanges()
+
+    ####################################################
+    # RUN GENERATE SIGNALS
+    ####################################################
+    def do_generate_signals(self, line):
+
+        ####### GET ARGUMENTS
+        exchange = raw_input('Enter Exchange: ')
+        while exchange == '':
+            print 'Exchange symbol required'
+            exchange = raw_input('Enter Exchange: ')
+        start_date = raw_input('Enter start date (default 2000-01-01): ')
+        if start_date == '':
+            start_date = '1970-01-04'
+        end_date = raw_input('Enter end date (default last close): ')
+        if end_date == '':
+            end_date = datetime.datetime.now().strftime('%Y-%m-%d')
+        
+        ####### LOAD DATA
+        data = Exchanges.load_exchange_data(exchange)
+
+
+    ####################################################
+    # VIEW SIGNALS
+    ####################################################
+    def do_view_signals(self, line):
+
+        ####### GET ARGUMENTS
+        exchange = raw_input('Enter Exchange: ')
+        while exchange == '':
+            print 'Exchange symbol required'
+            exchange = raw_input('Enter Exchange: ')
+        signals_name = raw_input('Enter signals name: ')
+        while signals_name == '':
+            exchange = raw_input('Enter signals name: ')
+        
+        ####### LOAD DATA
+        filename = 'data/' + exchange + '.hdf5'
+        operator = h5py.File(filename, 'a')
+        data = operator[exchange][...]
+        signals_dset = operator['/Signals/' + signals_name]
+        signals = signals_dset[...]
+
+        ####### TIMEFRAME
+        start_date = signals_dset.attrs['start_date']
+        start_date_float = float(start_date.split('-')[0] + start_date.split('-')[1] + start_date.split('-')[2])
+        end_date = signals_dset.attrs['end_date']
+        end_date_float = float(end_date.split('-')[0] + end_date.split('-')[1] + end_date.split('-')[2])
+        data = data[np.where(data[:,0] >= start_date_float)]
+        data = data[np.where(data[:,0] <= end_date_float)]
+
+        fig, (plt1, plt2, plt3) = plt.subplots(3, 1)
+        frame = 200
+
+        ####### INITIAL FRAME
+        NS.signal_index = 0
+        NS.data_index = np.where(data[:,0] == signals[NS.signal_index][0])[0][0]
+        if NS.data_index - frame > 0:
+            frame_start = NS.data_index - frame
+        else:
+            frame_start = 0
+        if NS.data_index + frame > len(data):
+            frame_end = len(data)
+        else:
+            frame_end = NS.data_index + frame
+
+        plt1.grid(True)
+        plt1.hold(True)
+        plt1.plot(data[:,4][frame_start:frame_end], color='c')
+        plt1.plot(data[:, 15][frame_start:frame_end], color='r')
+        plt1.plot([frame, frame], [min(data[:,4][frame_start:frame_end]), max(data[:,4][frame_start:frame_end])], 'k', lw=1)
+
+        plt2.grid(True)
+        plt2.plot(data[:, 14][frame_start:frame_end], color='g')
+        plt2.plot([frame, frame], [min(data[:,14][frame_start:frame_end]), max(data[:,14][frame_start:frame_end])], 'k', lw=1)
+
+        symbol_string = []
+        if signals[NS.signal_index][1] == 0:
+            symbol_string.append('Buy to Open')
+        if signals[NS.signal_index][1] == 1:
+            symbol_string.append('Sell to Open')
+        if signals[NS.signal_index][1] == 2:
+            symbol_string.append('Sell to Close')
+        if signals[NS.signal_index][1] == 3:
+            symbol_string.append('Buy to Close')
+
+        date_float = data[:,0][NS.data_index]
+        date_str = str(date_float)[:4] + '-' + str(date_float)[4:6] + '-' + str(date_float)[6:8]
+        symbol_string.append(date_str)
+        symbol_string.append(str(data[:,4][NS.data_index]))
+        symbol_string.append(str(data[:,15][NS.data_index]))
+        symbol_string.append(str(data[:,14][NS.data_index]))
+
+        rc('font', family='serif')
+        rc('text', usetex=True)
+
+        plt3.cla()
+        plt3.text(0.5, 0.5, r'\begin{tabular}{lc} {Signal: } & {%s} \\ {Date: } & {%s} \\ {Close: } & {%s} \\ {SMA: } & {%s} \\ {Summation Index: } & {%s} \\ \end{tabular}' % tuple(symbol_string), fontsize=12)
+
+
+        axcol = 'lightgoldenrodyellow'
+
+        ##### BUILD NEXT SIGNAL BUTTON
+        nextax = plt.axes([0.57, 0.03, 0.065, 0.035])
+        nextbutton = Button(nextax, 'Next Signal', color=axcol, hovercolor='0.0975')
+        def next_signal(event):
+            NS.signal_index += 1
+            NS.data_index = np.where(data[:,0] == signals[NS.signal_index][0])[0][0]
+
+            if (NS.data_index - frame) > 0:
+                frame_start = NS.data_index - frame
+            else:
+                frame_start = 0
+            if (NS.data_index + frame) > len(data):
+                frame_end = len(data)
+            else:
+                frame_end = NS.data_index + frame
+
+            plt1.cla()
+            plt1.grid(True)
+            plt1.hold(True)
+            plt1.plot(data[:,4][frame_start:frame_end], color='c')
+            plt1.plot(data[:, 15][frame_start:frame_end], color='r')
+            plt1.plot([frame, frame], [min(data[:,4][frame_start:frame_end]), max(data[:,4][frame_start:frame_end])], 'k', lw=1)
+
+            plt2.cla()
+            plt2.grid(True)
+            plt2.plot(data[:, 14][frame_start:frame_end], color='g')
+            plt2.plot([frame, frame], [min(data[:,14][frame_start:frame_end]), max(data[:,14][frame_start:frame_end])], 'k', lw=1)
+
+            symbol_string = []
+            if signals[NS.signal_index][1] == 0:
+                symbol_string.append('Buy to Open')
+            if signals[NS.signal_index][1] == 1:
+                symbol_string.append('Sell to Open')
+            if signals[NS.signal_index][1] == 2:
+                symbol_string.append('Sell to Close')
+            if signals[NS.signal_index][1] == 3:
+                symbol_string.append('Buy to Close')
+
+            date_float = data[:,0][NS.data_index]
+            date_str = str(date_float)[:4] + '-' + str(date_float)[4:6] + '-' + str(date_float)[6:8]
+            symbol_string.append(date_str)
+            symbol_string.append(str(data[:,4][NS.data_index]))
+            symbol_string.append(str(data[:,15][NS.data_index]))
+            symbol_string.append(str(data[:,14][NS.data_index]))
+
+            rc('font', family='serif')
+            rc('text', usetex=True)
+
+            plt3.cla()
+            plt3.text(0.5, 0.5, r'\begin{tabular}{lc} {Signal: } & {%s} \\ {Date: } & {%s} \\ {Close: } & {%s} \\ {SMA: } & {%s} \\ {Summation Index: } & {%s} \\ \end{tabular}' % tuple(symbol_string), fontsize=12)
+            plt.draw()
+        nextbutton.on_clicked(next_signal)
+
+        ##### BUILD PREVIOUS SIGNAL BUTTON
+        prevax = plt.axes([0.47, 0.03, 0.065, 0.035])
+        prevbutton = Button(prevax, 'Previous Signal', color=axcol, hovercolor='0.0975')
+        def prev_signal(event):
+            NS.signal_index -= 1
+            NS.data_index = np.where(data[:,0] == signals[NS.signal_index][0])[0][0]
+
+            if (NS.data_index - frame) > 0:
+                frame_start = NS.data_index - frame
+            else:
+                frame_start = 0
+            if (NS.data_index + frame) > len(data):
+                frame_end = len(data)
+            else:
+                frame_end = NS.data_index + frame
+
+            plt1.cla()
+            plt1.grid(True)
+            plt1.hold(True)
+            plt1.plot(data[:,4][frame_start:frame_end], color='c')
+            plt1.plot(data[:, 15][frame_start:frame_end], color='r')
+            plt1.plot([frame, frame], [min(data[:,4][frame_start:frame_end]), max(data[:,4][frame_start:frame_end])], 'k', lw=1)
+
+            plt2.cla()
+            plt2.grid(True)
+            plt2.plot(data[:, 14][frame_start:frame_end], color='g')
+            plt2.plot([frame, frame], [min(data[:,14][frame_start:frame_end]), max(data[:,14][frame_start:frame_end])], 'k', lw=1)
+
+            symbol_string = []
+            if signals[NS.signal_index][1] == 0:
+                symbol_string.append('Buy to Open')
+            if signals[NS.signal_index][1] == 1:
+                symbol_string.append('Sell to Open')
+            if signals[NS.signal_index][1] == 2:
+                symbol_string.append('Sell to Close')
+            if signals[NS.signal_index][1] == 3:
+                symbol_string.append('Buy to Close')
+
+            date_float = data[:,0][NS.data_index]
+            date_str = str(date_float)[:4] + '-' + str(date_float)[4:6] + '-' + str(date_float)[6:8]
+            symbol_string.append(date_str)
+            symbol_string.append(str(data[:,4][NS.data_index]))
+            symbol_string.append(str(data[:,15][NS.data_index]))
+            symbol_string.append(str(data[:,14][NS.data_index]))
+
+            rc('font', family='serif')
+            rc('text', usetex=True)
+
+            plt3.cla()
+            plt3.text(0.5, 0.5, r'\begin{tabular}{lc} {Signal: } & {%s} \\ {Date: } & {%s} \\ {Close: } & {%s} \\ {SMA: } & {%s} \\ {Summation Index: } & {%s} \\ \end{tabular}' % tuple(symbol_string), fontsize=12)
+            plt.draw()
+        prevbutton.on_clicked(prev_signal)
+
+
+        ##### BUILD LAST SIGNAL BUTTON
+        lastax = plt.axes([0.37, 0.03, 0.065, 0.035])
+        lastbutton = Button(lastax, 'Last Signal', color=axcol, hovercolor='0.0975')
+        def last_signal(event):
+            NS.signal_index -= 1
+            NS.data_index = np.where(data[:,0] == signals[NS.signal_index][0])[0][0]
+
+            if (NS.data_index - frame) > 0:
+                frame_start = NS.data_index - frame
+            else:
+                frame_start = 0
+            if (NS.data_index + frame) > len(data):
+                frame_end = len(data)
+            else:
+                frame_end = NS.data_index + frame
+
+            plt1.cla()
+            plt1.grid(True)
+            plt1.hold(True)
+            plt1.plot(data[:,4][frame_start:frame_end], color='c')
+            plt1.plot(data[:, 15][frame_start:frame_end], color='r')
+            plt1.plot([frame, frame], [min(data[:,4][frame_start:frame_end]), max(data[:,4][frame_start:frame_end])], 'k', lw=1)
+
+            plt2.cla()
+            plt2.grid(True)
+            plt2.plot(data[:, 14][frame_start:frame_end], color='g')
+            plt2.plot([frame, frame], [min(data[:,14][frame_start:frame_end]), max(data[:,14][frame_start:frame_end])], 'k', lw=1)
+
+            symbol_string = []
+            if signals[NS.signal_index][1] == 0:
+                symbol_string.append('Buy to Open')
+            if signals[NS.signal_index][1] == 1:
+                symbol_string.append('Sell to Open')
+            if signals[NS.signal_index][1] == 2:
+                symbol_string.append('Sell to Close')
+            if signals[NS.signal_index][1] == 3:
+                symbol_string.append('Buy to Close')
+
+            date_float = data[:,0][NS.data_index]
+            date_str = str(date_float)[:4] + '-' + str(date_float)[4:6] + '-' + str(date_float)[6:8]
+            symbol_string.append(date_str)
+            symbol_string.append(str(data[:,4][NS.data_index]))
+            symbol_string.append(str(data[:,15][NS.data_index]))
+            symbol_string.append(str(data[:,14][NS.data_index]))
+
+            rc('font', family='serif')
+            rc('text', usetex=True)
+
+            plt3.cla()
+            plt3.text(0.5, 0.5, r'\begin{tabular}{lc} {Signal: } & {%s} \\ {Date: } & {%s} \\ {Close: } & {%s} \\ {SMA: } & {%s} \\ {Summation Index: } & {%s} \\ \end{tabular}' % tuple(symbol_string), fontsize=12)
+            plt.draw()
+        lastbutton.on_clicked(last_signal)
+
+
+        ##### BUILD EXIT BUTTON
+        exitax = plt.axes([0.83, 0.03, 0.065, 0.035])
+        exitbutton = Button(exitax, 'Exit', color=axcol, hovercolor='0.0975')
+        def leave(event):
+            plt.close()
+        exitbutton.on_clicked(leave)
+
+        plt.draw()
+        plt.show()
+
+    ####################################################
+    # RUN BACKTEST W/ SIGNALS
+    ####################################################
+    def do_backtest(self, line):
+        
+
+        ####### GET ARGUMENTS
+        exchange = raw_input('Enter Exchange: ')
+        while exchange == '':
+            print 'Exchange symbol required'
+            exchange = raw_input('Enter Exchange: ')
+        signals_name = raw_input('Enter signals name: ')
+        while signals_name == '':
+            exchange = raw_input('Enter signals name: ')
+        
+        ####### LOAD DATA
+        filename = 'data/' + exchange + '.hdf5'
+        operator = h5py.File(filename, 'a')
+        symbol_data = operator[exchange][...]
+        signals = operator['/Signals/' + signals_name]
+
+
+        
+
+
+        ####### SAVE DATA
+        results_name = raw_input('Enter backtest name: ')
+        operator[results_name] = signals
+        dset = operator[results_name]
+        dset.attrs['start_date'] = start_date
+        dset.attrs['end_date'] = end_date
+        dset.attrs['exchange'] = exchange
+        operator.close()
+
 
     ####################################################
     # GENERATE TARGET DATA
